@@ -1,0 +1,112 @@
+org: kennyjacobson
+app: comic-dev
+service: comic-dev
+
+frameworkVersion: '3'
+provider:
+  name: aws
+  runtime: python3.9
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - s3:*
+      Resource: arn:aws:s3:::${self:service}-comic-dev-${sls:stage}
+    - Effect: Allow
+      Action:
+        - dynamodb:*
+      Resource: arn:aws:dynamodb:${aws:region}:*:table/${self:service}-series-${sls:stage}
+    - Effect: Allow
+      Action:
+        - dynamodb:*
+      Resource: arn:aws:dynamodb:${aws:region}:*:table/${self:service}-episode-${sls:stage}
+    - Effect: Allow
+      Action:
+        - dynamodb:*
+      Resource: arn:aws:dynamodb:${aws:region}:*:table/${self:service}-scene-${sls:stage}
+    - Effect: Allow
+      Action:
+        - sns:*
+      Resource: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-parsed-name-${sls:stage}
+  environment:
+    AWS_COMIC_BUCKET: ${self:service}-comic-dev-${sls:stage}
+    AWS_SERIES_TABLE: ${self:service}-series-${sls:stage}
+    AWS_EPISODE_TABLE: ${self:service}-episode-${sls:stage}
+    AWS_SCENE_TABLE: ${self:service}-scene-${sls:stage}
+    AWS_PARSED_NAME_TOPIC: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-parsed-name-${sls:stage}
+
+functions:
+  hello:
+    handler: handler.hello
+    events:
+      - httpApi:
+          path: /hello
+          method: get    
+  parseFileName:
+    handler: parseFileName.parseFileName
+    events:
+      - s3:
+          bucket: ${self:service}-s3-comic-dev-${sls:stage}
+          event: s3:ObjectCreated:*
+          rules:
+            - prefix: comics/
+            - suffix: .png
+          existing: true
+  saveToTables:
+    handler: saveToTables.handler
+    events:
+      - sns:
+          arn: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-parsed-name-${sls:stage}
+          displayName: parsed-name
+resources:
+  Resources:
+    ParsedNameTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-parsed-name-${sls:stage}
+    ComicBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:service}-s3-comic-dev-${sls:stage} 
+    SeriesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-series-${sls:stage}
+        AttributeDefinitions:
+          - AttributeName: seriesId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: seriesId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+    EpisodeTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-episode-${sls:stage}
+        AttributeDefinitions:
+          - AttributeName: episodeId
+            AttributeType: S
+          - AttributeName: seriesId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: episodeId
+            KeyType: HASH
+          - AttributeName: seriesId
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+    SceneTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-scene-${sls:stage}
+        AttributeDefinitions:
+          - AttributeName: sceneId
+            AttributeType: S
+          - AttributeName: episodeId_seriesId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: sceneId
+            KeyType: HASH
+          - AttributeName: episodeId_seriesId
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+
+
