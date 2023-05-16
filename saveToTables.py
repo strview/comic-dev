@@ -7,6 +7,7 @@
 #   "episode": "episode",
 #   "scene": "scene",
 #    "filename": "filename",
+#   "url": "url"    
 # }
 # it will check to see if the series already exists in the series table
 # if not, it will add it,         
@@ -18,18 +19,14 @@
 # if not, it will add it. it will include a foreign key to the episode table
 
 import json
-import boto3
+import boto3 # pylint: disable=import-error
 import os
 
 def handler(event, context):
-    # destructure the message from the event
     message = json.loads(event['Records'][0]['Sns']['Message'])
     print(message)
-    (series, episode, scene, filename) = (message['series'], message['episode'], message['scene'], message['filename'])
+    (series, episode, scene, filename, url) = (message['series'], message['episode'], message['scene'], message['filename'], message['url'])
     print(series, episode, scene, filename)
-    # TODO implement
-    ## use the AWS_SERIES_TABLE and AWS_EPISODE_TABLE environment variables to get the table names
-    ## it is locatd in servreless.yml file
     series_table = os.environ['AWS_SERIES_TABLE']
     episode_table = os.environ['AWS_EPISODE_TABLE']
     scene_table = os.environ['AWS_SCENE_TABLE']
@@ -37,9 +34,6 @@ def handler(event, context):
     series_table = dynamodb.Table(series_table)
     episode_table = dynamodb.Table(episode_table)
     scene_table = dynamodb.Table(scene_table)
-    # check to see if the series already exists in the series table
-    # if not, it will add it,
-    # it will also add a property to the series table called name which is the series in title case
     series_response = series_table.get_item(
         Key={
             'seriesId': series    
@@ -66,7 +60,8 @@ def handler(event, context):
             Item={
                 'seriesId': series,
                 'episodeId': episode,
-                'series_name': series.title()
+                'series_name': series.title(),
+                'is_published': False
             }
         )
 
@@ -85,7 +80,8 @@ def handler(event, context):
                 'episodeId_seriesId': f"{episode}_{series}",
                 'episode': episode,
                 'scene': scene,
-                'series_name': series.title()
+                'series_name': series.title(),
+                'url': url,
             }
         )
     return {

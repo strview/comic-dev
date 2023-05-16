@@ -2,6 +2,18 @@ org: kennyjacobson
 app: comic-dev
 service: comic-dev
 
+# i need to add the python requests libary to this serverless.yml file
+# Q: how do i add the python requests libary to this serverless.yml file?
+# A: i need to add the python requests libary to this serverless.yml file
+
+plugins:
+  - serverless-python-requirements
+
+custom:
+  pythonRequirements:
+    dockerizePip: true
+
+
 frameworkVersion: '3'
 provider:
   name: aws
@@ -9,8 +21,16 @@ provider:
   iamRoleStatements:
     - Effect: Allow
       Action:
+        - sqs:*
+      Resource: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-scenes-to-publish-${sls:stage}
+    - Effect: Allow
+      Action:
         - s3:*
       Resource: arn:aws:s3:::${self:service}-comic-dev-${sls:stage}
+    - Effect: Allow
+      Action:
+        - s3:*
+      Resource: arn:aws:s3:::${self:service}-comics-dev-${sls:stage}
     - Effect: Allow
       Action:
         - dynamodb:*
@@ -27,12 +47,24 @@ provider:
       Action:
         - sns:*
       Resource: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-parsed-name-${sls:stage}
+    - Effect: Allow
+      Action:
+        - sns:*
+      Resource: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-single-scene-${sls:stage}
+    - Effect: Allow
+      Action:
+        - sqs:*
+      Resource: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-scenes-to-publish-${sls:stage}
   environment:
-    AWS_COMIC_BUCKET: ${self:service}-comic-dev-${sls:stage}
+    AWS_COMIC_BUCKET: ${self:service}-comics-dev-${sls:stage}
     AWS_SERIES_TABLE: ${self:service}-series-${sls:stage}
     AWS_EPISODE_TABLE: ${self:service}-episode-${sls:stage}
     AWS_SCENE_TABLE: ${self:service}-scene-${sls:stage}
     AWS_PARSED_NAME_TOPIC: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-parsed-name-${sls:stage}
+    AWS_SCENES_TO_PUBLISH_QUEUE_URL: https://sqs.${aws:region}.amazonaws.com/${aws:accountId}/${self:service}-scenes-to-publish-${sls:stage}
+    AWS_SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/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"
+    AWS_SINGLE_SCENE_TO_PUBLISH_TOPIC: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-single-scene-${sls:stage}
+    # AWS_SCENES_TO_PUBLISH_QUEUE_URL: ${self:service}-scenes-to-publish-${sls:stage}
 
 functions:
   hello:
@@ -45,10 +77,22 @@ functions:
     handler: parseFileName.parseFileName
     events:
       - s3:
-          bucket: ${self:service}-s3-comic-dev-${sls:stage}
+          bucket: ${self:service}-s3-comic-dev-${sls:stage} 
+          # bucket: arn:aws:s3:::${self:service}-s3-comics-dev-${sls:stage}
           event: s3:ObjectCreated:*
           rules:
             - prefix: comics/
+            - suffix: .png
+          existing: true
+  parseFileNameV2:
+    handler: parseFileName.parseFileName
+    events:
+      - s3:
+          bucket: ${self:service}-s3-comics-dev-${sls:stage} 
+          # bucket: arn:aws:s3:::${self:service}-s3-comics-dev-${sls:stage}
+          event: s3:ObjectCreated:*
+          rules:
+            - prefix: in/
             - suffix: .png
           existing: true
   saveToTables:
@@ -57,16 +101,80 @@ functions:
       - sns:
           arn: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-parsed-name-${sls:stage}
           displayName: parsed-name
+  publishScenes:
+    handler: publishScenes.handler
+    events:
+      - httpApi:
+          path: /publish-scenes
+          method: post
+  publishSingleScene:
+    handler: publishSingleScene.handler
+    events:
+      - sqs:
+          arn: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-scenes-to-publish-${sls:stage}
+          batchSize: 1
+          enabled: true
+  writeToSlack:
+    handler: writeToSlack.handler
+    events:
+      - sns:
+          arn: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-single-scene-${sls:stage}
+          displayName: single-scene
+  postPublishCleanup:
+    handler: postPublishCleanup.handler
+    events:
+      - sns:
+          arn: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-single-scene-${sls:stage}
+          displayName: single-scene
 resources:
   Resources:
+    CognitoUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:service}-user-pool-${sls:stage}
+        UsernameAttributes:
+          - email
+        AutoVerifiedAttributes:
+          - email
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireLowercase: true
+            RequireNumbers: true
+            RequireSymbols: false
+            RequireUppercase: true
+    CognitoUserPoolGroup:
+      Type: AWS::Cognito::UserPoolGroup
+      Properties:
+        GroupName: ${self:service}-admin-${sls:stage}
+        Description: Admin group for Comic admins
+        UserPoolId:
+          Ref: CognitoUserPool
+    ScenesToPublish:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-scenes-to-publish-${sls:stage}
     ParsedNameTopic:
       Type: AWS::SNS::Topic
       Properties:
         TopicName: ${self:service}-parsed-name-${sls:stage}
+    SingleSceneTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-single-scene-${sls:stage}
     ComicBucket:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${self:service}-s3-comic-dev-${sls:stage} 
+    ComicsBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:service}-s3-comics-dev-${sls:stage} 
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: false
+          BlockPublicPolicy: false
+          IgnorePublicAcls: false
+          RestrictPublicBuckets: false
     SeriesTable:
       Type: AWS::DynamoDB::Table
       Properties:

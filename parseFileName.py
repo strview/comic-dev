@@ -21,18 +21,19 @@ def parseFileName(event, context):
 
 
     print(event)
-    # s3 = boto3.client('s3')
     sns = boto3.client('sns')
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = event['Records'][0]['s3']['object']['key'] 
-    print("Bucket: " + bucket)
-    print("Key: " + key)
+    url = "https://" + bucket + ".s3.amazonaws.com/" + key
+
     series, episode, scene = key.split('-')
+    series = series.split('/')[1]
     message = {
         'series': series,
         'episode': episode,
         'scene': scene.split('.')[0],
-        'filename': key
+        'filename': key,
+        'url': url
     }
     print(message)
     response = sns.publish(
