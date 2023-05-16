@@ -62,7 +62,7 @@ provider:
     AWS_SCENE_TABLE: ${self:service}-scene-${sls:stage}
     AWS_PARSED_NAME_TOPIC: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-parsed-name-${sls:stage}
     AWS_SCENES_TO_PUBLISH_QUEUE_URL: https://sqs.${aws:region}.amazonaws.com/${aws:accountId}/${self:service}-scenes-to-publish-${sls:stage}
-    AWS_SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/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"
+    AWS_SLACK_WEBHOOK_URL: ${file(./config.${opt:stage, 'dev'}.json):SLACK_WEBHOOK_URL}
     AWS_SINGLE_SCENE_TO_PUBLISH_TOPIC: arn:aws:sns:${aws:region}:${aws:accountId}:${self:service}-single-scene-${sls:stage}
     # AWS_SCENES_TO_PUBLISH_QUEUE_URL: ${self:service}-scenes-to-publish-${sls:stage}
 
