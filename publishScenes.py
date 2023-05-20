@@ -27,8 +27,9 @@ import datetime
 def handler(event, context):
     # TODO implement
     print(event)
-    series = event['body']['series']
-    episode = event['body']['episode']
+    body = json.loads(event['body'])
+    series = body['series']
+    episode = body['episode']
     # series_table = os.environ['AWS_SERIES_TABLE']
     episode_table = os.environ['AWS_EPISODE_TABLE']
     scene_table = os.environ['AWS_SCENE_TABLE']
